@@ -1,1 +1,42 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 
+file_path = "/content/microbiology_cultures_microbial_resistance.csv"  # ⬅️ 替換為你的檔案路徑
+nrows = 200_000
+
+df = pd.read_csv(file_path, usecols=[
+    "organism", "antibiotic", "order_time_jittered_utc", "resistant_time_to_culturetime"
+], nrows=nrows)
+
+target_organism = "Escherichia coli"
+target_abx = ["Ciprofloxacin", "Ampicillin", "Levofloxacin"]
+
+df = df[
+    (df["organism"] == target_organism) &
+    (df["antibiotic"].isin(target_abx)) &
+    (df["order_time_jittered_utc"].notna())
+].copy()
+
+df["is_resistant"] = df["resistant_time_to_culturetime"].notna().astype(int)
+
+df["year"] = pd.to_datetime(df["order_time_jittered_utc"], errors="coerce").dt.year
+df = df[df["year"].notna()]
+df["year"] = df["year"].astype(int)
+
+trend = df.groupby(["antibiotic", "year"]).agg(
+    total_cases=("is_resistant", "count"),
+    resistant_cases=("is_resistant", "sum")
+).reset_index()
+
+trend["resistance_rate"] = trend["resistant_cases"] / trend["total_cases"]
+
+plt.figure(figsize=(10, 6))
+sns.lineplot(data=trend, x="year", y="resistance_rate", hue="antibiotic", marker="o")
+plt.title("Escherichia coli 抗藥性趨勢 (模擬樣本)")
+plt.ylabel("抗藥性比例 (resistance rate)")
+plt.xlabel("年份")
+plt.grid(True)
+plt.legend(title="抗生素")
+plt.tight_layout()
+plt.show()
