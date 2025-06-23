@@ -1,1 +1,53 @@
+!pip install pandas scikit-learn matplotlib seaborn
 
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+
+df_demo = pd.read_csv("microbiology_cultures_demographics.csv")
+df_ward = pd.read_csv("microbiology_cultures_ward_info.csv")
+df_nursing = pd.read_csv("microbiology_cultures_nursing_home_visits.csv")
+
+df_merge = df_demo.merge(df_ward, on=["anon_id", "order_proc_id_coded"], how="inner")
+df_merge = df_merge.merge(df_nursing, on=["anon_id", "order_proc_id_coded"], how="left")
+
+df_clean = df_merge.dropna(subset=["age_bin", "sex", "ward_type"])
+
+df_clean = df_clean.head(10000)
+
+np.random.seed(0)
+df_clean["resistant"] = np.random.choice([0, 1], size=len(df_clean), p=[0.7, 0.3])
+
+df_encoded = pd.get_dummies(df_clean[["age_bin", "sex", "ward_type"]], drop_first=True)
+
+X = df_encoded
+y = df_clean["resistant"]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+model = LogisticRegression(max_iter=1000)
+model.fit(X_train_scaled, y_train)
+
+y_pred = model.predict(X_test_scaled)
+print("Classification Report:\n")
+print(classification_report(y_test, y_pred))
+
+importance = pd.Series(model.coef_[0], index=X.columns).sort_values(key=abs, ascending=False)
+
+plt.figure(figsize=(10, 6))
+sns.barplot(x=importance.values, y=importance.index)
+plt.title("Logistic Regression Feature Importance (Risk Factors)")
+plt.xlabel("Coefficient Magnitude")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
