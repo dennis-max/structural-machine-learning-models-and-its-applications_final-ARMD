@@ -1,1 +1,62 @@
+import pandas as pd
+import numpy as np
+from xgboost import XGBClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import classification_report, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
+base_path = "/content/" 
+df_cohort = pd.read_csv(base_path + "microbiology_cultures_cohort.csv")
+df_susc = pd.read_csv(base_path + "microbiology_cultures_implied_susceptibility.csv")
+df_demo = pd.read_csv(base_path + "microbiology_cultures_demographics.csv")
+df_adi = pd.read_csv(base_path + "microbiology_cultures_adi_scores.csv")
+df_nh = pd.read_csv(base_path + "microbiology_cultures_nursing_home_visits.csv")
+df_ward = pd.read_csv(base_path + "microbiology_cultures_ward_info.csv")
+
+df = df_cohort.merge(df_susc, on=["culture_id", "organism"], how="left")
+df = df[df['resistance_category'].notna()]
+df = df[df['resistance_category'].isin(["Resistant", "Susceptible"])]
+
+
+df = df[df['resistance_category'] == 'Susceptible']
+df = df.merge(df_demo, on='culture_id', how='left')
+df = df.merge(df_adi[['culture_id', 'adi_score']], on='culture_id', how='left')
+df = df.merge(df_nh[['culture_id', 'days_since_last_nh_visit']], on='culture_id', how='left')
+df = df.merge(df_ward[['culture_id', 'ward_type']], on='culture_id', how='left')
+
+df['has_nh_visit'] = df['days_since_last_nh_visit'].notna().astype(int)
+df['adi_score'] = df['adi_score'].fillna(df['adi_score'].median())
+
+df = pd.get_dummies(df, columns=['age_bin', 'sex', 'race', 'ward_type'])
+
+abx_counts = df['antibiotic'].value_counts()
+common_abx = abx_counts[abx_counts > 300].index 
+df = df[df['antibiotic'].isin(common_abx)]
+
+drop_cols = ['culture_id', 'organism', 'resistance_category', 'days_since_last_nh_visit']
+X = df.drop(columns=drop_cols + ['antibiotic'])
+y = df['antibiotic']
+
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+
+model = XGBClassifier(use_label_encoder=False, eval_metric='mlogloss', random_state=42)
+model.fit(X_train, y_train)
+
+y_pred = model.predict(X_test)
+print("Classification Report:")
+print(classification_report(y_test, y_pred))
+
+plt.figure(figsize=(10, 8))
+cm = confusion_matrix(y_test, y_pred, labels=model.classes_)
+sns.heatmap(cm, annot=True, fmt='d', xticklabels=model.classes_, yticklabels=model.classes_, cmap="Blues")
+plt.title("Confusion Matrix - Empiric Antibiotic Recommendation")
+plt.xlabel("Predicted Antibiotic")
+plt.ylabel("True Antibiotic")
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.show()
