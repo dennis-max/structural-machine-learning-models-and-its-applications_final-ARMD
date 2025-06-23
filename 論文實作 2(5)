@@ -1,1 +1,26 @@
+import pandas as pd
 
+base_path = "/content/"  
+df_cohort = pd.read_csv(base_path + "microbiology_cultures_cohort.csv")
+df_susc = pd.read_csv(base_path + "microbiology_cultures_implied_susceptibility.csv")
+df_rules = pd.read_csv(base_path + "implied_susceptibility_rules.csv")
+
+df_known_r = df_susc[df_susc["resistance_category"] == "Resistant"]
+
+df_merge = df_known_r.merge(df_rules, left_on="antibiotic", right_on="from_antibiotic")
+
+df_imputed = df_merge[["culture_id", "organism", "to_antibiotic", "implied_resistance"]].copy()
+df_imputed.rename(columns={
+    "to_antibiotic": "antibiotic",
+    "implied_resistance": "resistance_category"
+}, inplace=True)
+df_imputed["is_imputed"] = True
+
+df_susc["is_imputed"] = False
+df_full = pd.concat([df_susc, df_imputed], ignore_index=True)
+
+df_full.sort_values("is_imputed", inplace=True)
+df_full = df_full.drop_duplicates(subset=["culture_id", "organism", "antibiotic"], keep="first")
+
+print("補全資料筆數：", df_imputed.shape[0])
+df_full[df_full["is_imputed"]].head(10)
