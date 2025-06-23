@@ -1,1 +1,67 @@
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+from pptx import Presentation
+from pptx.util import Inches
+
+base_path = "/content/"
+df_cohort = pd.read_csv(base_path + "microbiology_cultures_cohort.csv")
+df_susc = pd.read_csv(base_path + "microbiology_cultures_implied_susceptibility.csv")
+df_demo = pd.read_csv(base_path + "microbiology_cultures_demographics.csv")
+df_adi = pd.read_csv(base_path + "microbiology_cultures_adi_scores.csv")
+df_nh = pd.read_csv(base_path + "microbiology_cultures_nursing_home_visits.csv")
+df_ward = pd.read_csv(base_path + "microbiology_cultures_ward_info.csv")
+
+df = df_cohort[df_cohort['organism'] == 'Escherichia coli']
+df = df.merge(df_susc, on=['culture_id', 'organism'], how='left')
+df = df[df['antibiotic'] == 'Ciprofloxacin']
+df = df.merge(df_demo, on='culture_id', how='left')
+df = df.merge(df_adi[['culture_id', 'adi_score']], on='culture_id', how='left')
+df = df.merge(df_nh[['culture_id', 'days_since_last_nh_visit']], on='culture_id', how='left')
+df = df.merge(df_ward[['culture_id', 'ward_type']], on='culture_id', how='left')
+
+df['is_resistant'] = (df['resistance_category'] == 'Resistant').astype(int)
+df['has_nh_visit'] = df['days_since_last_nh_visit'].notna().astype(int)
+df['adi_score'] = df['adi_score'].fillna(df['adi_score'].median())
+
+df = pd.get_dummies(df, columns=['age_bin', 'sex', 'race', 'ward_type'])
+
+drop_cols = ['culture_id', 'organism', 'antibiotic', 'resistance_category',
+             'days_since_last_nh_visit', 'is_resistant']
+X = df.drop(columns=drop_cols)
+y = df['is_resistant']
+
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+importances = pd.Series(model.feature_importances_, index=X.columns)
+top_features = importances.sort_values(ascending=False).head(15)
+
+plt.figure(figsize=(8, 6))
+top_features.sort_values().plot(kind='barh', color='forestgreen')
+plt.title("Top 15 Risk Factors for Ciprofloxacin Resistance (Random Forest)")
+plt.xlabel("Feature Importance (Gini)")
+plt.tight_layout()
+
+fig_path = base_path + "rf_risk_factors.png"
+plt.savefig(fig_path)
+plt.close()
+
+ppt = Presentation()
+slide = ppt.slides.add_slide(ppt.slide_layouts[5])
+slide.shapes.title.text = "Ciprofloxacin 抗藥性風險因子分析（Random Forest）"
+slide.shapes.add_picture(fig_path, Inches(1), Inches(1.5), width=Inches(8.5))
+ppt_path = base_path + "Ciprofloxacin_RF_Risk_Factor_PPT.pptx"
+ppt.save(ppt_path)
+
+print("圖片儲存位置:", fig_path)
+print("簡報儲存位置:", ppt_path)
 
